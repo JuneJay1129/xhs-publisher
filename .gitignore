@@ -1,5 +1,9 @@
-# 生成文件
+# 敏感配置（含 API key）
+config.json
+
+# 生成产物（按需保留）
 covers/*.html
+covers/*.png
 drafts/*.md
 data/used.json
 
@@ -17,6 +21,3 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
-
-# 敏感信息（API key 等）
-# config.json 里有 key，但暂不排除以便你迁移，推上去后记得换

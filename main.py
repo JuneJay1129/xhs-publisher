@@ -24,8 +24,29 @@ from publisher import publish_post
 
 
 def load_config():
-    with open(Path(__file__).parent / "config.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    config_path = Path(__file__).parent / "config.json"
+    example_path = Path(__file__).parent / "config.example.json"
+
+    if not config_path.exists():
+        if example_path.exists():
+            print("⚠️  config.json 不存在，已从 config.example.json 创建模板")
+            print(f"   请编辑 {config_path} 填入你的 API key\n")
+            config_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
+        else:
+            print("❌ config.json 和 config.example.json 都不存在")
+            sys.exit(1)
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    # 校验必填项
+    api_key = config.get("llm", {}).get("api_key", "")
+    if not api_key or api_key == "your-api-key-here":
+        print("❌ 请在 config.json 中填入你的 LLM API key")
+        print(f"   编辑: {config_path}")
+        sys.exit(1)
+
+    return config
 
 
 def run(skip_publish=False, pick_index=None):
@@ -114,8 +135,8 @@ def run(skip_publish=False, pick_index=None):
         print("\n✅ 草稿 + 封面图已生成，跳过发布")
         return post, draft_path
 
-    # Step 3: 发布
-    print("📤 Step 3: 打开小红书发布页...")
+    # Step 4: 发布
+    print("\n📤 Step 4: 打开小红书发布页...")
     success = publish_post(post)
     print("✅ 完成！" if success else "⚠️  请手动检查发布状态")
 

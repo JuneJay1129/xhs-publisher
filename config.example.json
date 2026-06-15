@@ -1,0 +1,15 @@
+{
+  "llm": {
+    "api_key": "your-api-key-here",
+    "api_url": "https://api.example.com/v1/chat/completions",
+    "model": "your-model-name",
+    "max_tokens": 2000
+  },
+  "xiaohongshu": {
+    "login_url": "https://creator.xiaohongshu.com/publish/publish",
+    "headless": false
+  },
+  "topics": ["AI", "LLM", "agent", "developer-tools", "open-source"],
+  "max_results": 20,
+  "language": "Python"
+}
