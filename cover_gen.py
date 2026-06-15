@@ -1,6 +1,6 @@
 """
 小红书 HTML 封面图生成器
-生成 1080x1440 竖版 HTML 页面，截图后作为小红书封面/配图
+生成 1080x1440 竖版 HTML 页面，并自动截图转为 PNG
 """
 
 import sys
@@ -19,12 +19,14 @@ def ensure_output_dir():
 # ── 通用 CSS 变量 ──────────────────────────────────────────
 
 COMMON_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
   width: 1080px;
   height: 1440px;
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
   position: relative;
 }
@@ -475,8 +477,30 @@ body {{
 
 # ── 主函数 ──────────────────────────────────────────────────
 
+def html_to_png(html_path):
+    """用 Playwright 将 HTML 文件截图转为 PNG"""
+    from playwright.sync_api import sync_playwright
+
+    png_path = html_path.with_suffix(".png")
+    abs_path = html_path.resolve().as_uri()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1080, "height": 1440})
+        page.goto(abs_path)
+        # 等待字体和样式加载
+        page.wait_for_timeout(500)
+        # 等待 Google Fonts 加载完成
+        page.wait_for_timeout(2000)
+        page.screenshot(path=str(png_path), type="png")
+        browser.close()
+
+    print(f"[covers]   -> {png_path.name}")
+    return png_path
+
+
 def generate_covers(post, repo_info, date_str=None):
-    """生成所有封面图 HTML"""
+    """生成所有封面图 HTML，并自动截图转 PNG"""
     if date_str is None:
         from datetime import datetime
         date_str = datetime.now().strftime("%Y-%m-%d")
@@ -489,14 +513,22 @@ def generate_covers(post, repo_info, date_str=None):
         ("03-quickstart", "快速上手", quickstart_html(post, repo_info)),
     ]
 
-    paths = []
+    html_paths = []
+    png_paths = []
     for filename, label, html in pages:
         filepath = OUTPUT_DIR / f"{date_str}-{filename}.html"
         filepath.write_text(html, encoding="utf-8")
-        print(f"[covers] {label}: {filepath}")
-        paths.append(filepath)
+        print(f"[covers] {label}: {filepath.name}")
+        html_paths.append(filepath)
 
-    return paths
+    # 批量截图
+    print("[covers] 正在截图转 PNG...")
+    for path in html_paths:
+        png = html_to_png(path)
+        png_paths.append(png)
+
+    print(f"[covers] 完成！共 {len(png_paths)} 张 PNG")
+    return png_paths
 
 
 if __name__ == "__main__":
