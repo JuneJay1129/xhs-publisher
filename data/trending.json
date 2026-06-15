@@ -1,0 +1,98 @@
+[
+  {
+    "name": "apple/container",
+    "description": "Apple's tool for running Linux containers on macOS, each inside its own lightweight VM on Apple silicon. Docker alternative with per-container kernel isolation.",
+    "stars": 36100,
+    "language": "Swift",
+    "url": "https://github.com/apple/container",
+    "topics": ["container", "apple", "vm", "linux", "macos"]
+  },
+  {
+    "name": "chopratejas/headroom",
+    "description": "Compression layer that shrinks tool outputs, logs and RAG chunks before they reach the model. 60-95% token reduction, deterministic, no extra model call.",
+    "stars": 25900,
+    "language": "Python",
+    "url": "https://github.com/chopratejas/headroom",
+    "topics": ["ai", "llm", "token-optimization", "compression", "agent"]
+  },
+  {
+    "name": "dmtrKovalenko/fff",
+    "description": "Rust file-search toolkit for AI agents and Neovim. Sub-10ms queries on 500k files. Resident in-memory index, SIMD matching, frecency ranking.",
+    "stars": 8400,
+    "language": "Rust",
+    "url": "https://github.com/dmtrKovalenko/fff",
+    "topics": ["rust", "file-search", "ai", "agent", "neovim"]
+  },
+  {
+    "name": "butterbase-ai/butterbase",
+    "description": "Open-source AI-native BaaS with Postgres, auth, storage, functions. MCP server exposes 35 tools — agent builds backend via tool calls, not dashboard clicks.",
+    "stars": 2100,
+    "language": "TypeScript",
+    "url": "https://github.com/butterbase-ai/butterbase",
+    "topics": ["ai", "mcp", "backend", "supabase-alternative", "agent"]
+  },
+  {
+    "name": "kenn-io/agentsview",
+    "description": "Local-first analytics for coding-agent sessions. Reads Claude Code, Codex, 20+ agent session files, indexes to SQLite, tracks token usage and cost. 100x faster than ccusage.",
+    "stars": 2300,
+    "language": "Go",
+    "url": "https://github.com/kenn-io/agentsview",
+    "topics": ["ai", "agent", "analytics", "token-tracking", "cli"]
+  },
+  {
+    "name": "mvanhorn/last30days-skill",
+    "description": "AI agent skill that researches any topic across Reddit, X, YouTube, HN, Polymarket, and the web — then synthesizes a grounded summary.",
+    "stars": 9307,
+    "language": "Python",
+    "url": "https://github.com/mvanhorn/last30days-skill",
+    "topics": ["ai", "agent", "research", "mcp"]
+  },
+  {
+    "name": "thedotmack/claude-mem",
+    "description": "Persistent memory layer across agent sessions. Auto-captures tool use and decisions, generates semantic summaries. 80k+ stars.",
+    "stars": 80800,
+    "language": "TypeScript",
+    "url": "https://github.com/thedotmack/claude-mem",
+    "topics": ["ai", "agent", "memory", "claude"]
+  },
+  {
+    "name": "OpenBMB/VoxCPM",
+    "description": "Tokenizer-free TTS system. 30 languages, voice design from text, real-time streaming. Apache-2.0.",
+    "stars": 26100,
+    "language": "Python",
+    "url": "https://github.com/OpenBMB/VoxCPM",
+    "topics": ["tts", "voice", "ai", "speech"]
+  },
+  {
+    "name": "jamiepine/voicebox",
+    "description": "Private, on-device voice toolkit for TTS, cloning and dictation. Free open-source ElevenLabs alternative.",
+    "stars": 29500,
+    "language": "TypeScript",
+    "url": "https://github.com/jamiepine/voicebox",
+    "topics": ["tts", "voice", "ai", "open-source"]
+  },
+  {
+    "name": "Michael-A-Kuykendall/shimmy",
+    "description": "Pure-Rust inference engine with OpenAI-API-compatible endpoint. Single binary, no Python, no llama.cpp. Vulkan/D3D12/Metal.",
+    "stars": 5300,
+    "language": "Rust",
+    "url": "https://github.com/Michael-A-Kuykendall/shimmy",
+    "topics": ["llm", "inference", "rust", "local-ai"]
+  },
+  {
+    "name": "NVIDIA/SkillSpector",
+    "description": "Security scanner for AI agent skills. Detect vulnerabilities, malicious patterns, and security risks.",
+    "stars": 5662,
+    "language": "Python",
+    "url": "https://github.com/NVIDIA/SkillSpector",
+    "topics": ["security", "ai", "agent", "scanner"]
+  },
+  {
+    "name": "Andyyyy64/whichllm",
+    "description": "Find the local LLM that actually runs and performs best on your hardware. Ranked by real benchmarks, not parameter count.",
+    "stars": 4777,
+    "language": "Python",
+    "url": "https://github.com/Andyyyy64/whichllm",
+    "topics": ["llm", "benchmark", "local-ai", "cli"]
+  }
+]
