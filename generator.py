@@ -1,184 +1,230 @@
 """
-小红书文案生成器
-用 LLM 根据 GitHub 项目信息生成小红书风格文案
+LLM 文案生成器
+支持通过 skill 系统自动适配不同项目类型的 prompt
+支持 --style / --length / --extra 等运行时调整
 """
 
 import sys
 import requests
 import json
 from pathlib import Path
+from prompts import build_system_prompt, STYLES, LENGTHS
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
-
 
 def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config_path = Path(__file__).parent / "config.json"
+    with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-SYSTEM_PROMPT = """你是一个小红书爆款文案写手，专门写科技/开源项目推荐类笔记。
+def generate_post(repo_info, readme="", config=None, skill=None,
+                  style_override=None, length_override=None, extra_instructions=None):
+    """调用 LLM 生成小红书文案
 
-## 写作要求
+    参数:
+      repo_info          - 仓库信息 {"name", "description", "stars", "language", "url", "topics"}
+      readme             - README 内容（截取前 2000 字符）
+      config             - 配置字典
+      skill              - 已匹配的 skill（由 main.py 传入）
+      style_override     - 风格覆盖（excited/calm/funny/tutorial/comparison）
+      length_override    - 长度覆盖（short/medium/long）
+      extra_instructions - 附加指令（追加到 system prompt 末尾）
 
-### 标题
-- 吸引眼球，带 1-2 个 emoji
-- 包含数字（如 star 数、性能提升百分比）或悬念
-- 15-20 字以内
-- 例如："⭐2.5w星！这个开源工具帮我省了95%的API费用"
-
-### 正文（500-800 字，分 5-6 个段落）
-
-**第一段 — 开头钩子**
-用一个具体的痛点场景引入，让读者产生共鸣。比如"你是不是也遇到过xxx的问题？"
-
-**第二段 — 项目介绍**
-清楚说明：
-- 项目全称（中英文都要提）
-- 用一句话概括它是什么
-- 目前的 GitHub Stars 数
-- 主要技术栈/语言
-
-**第三段 — 核心功能详解**
-详细介绍 2-3 个核心功能或亮点，每个功能用一两句话解释清楚。要具体，不要泛泛而谈。
-
-**第四段 — 使用方式**
-简要说明怎么上手（安装方式、支持的平台等），让读者觉得"这个我也能用"。
-
-**第五段 — 为什么推荐**
-总结推荐理由，可以对比同类工具说明优势。
-
-**第六段 — 项目地址 + 引导**
-- 明确写出项目地址（GitHub 链接）
-- 结尾引导互动："感兴趣的点赞收藏，有问题评论区见！"
-
-### 标签
-- 生成 8-10 个相关标签，用 # 开头
-- 包含中英文标签混搭
-- 必须包含：项目名相关标签、技术领域标签、通用标签如 #开源项目 #程序员
-
-### 风格要求
-- 口语化，轻松有趣，像朋友聊天
-- 适当使用 emoji 但不要过度（每段 2-3 个）
-- 不要用 markdown 格式（不要用 **加粗** 或 - 列表）
-- 不要用"小红书"这个词
-- 要有信息量，不要水话连篇
-
-### 封面图提示词
-- 生成一段英文的 AI 绘图提示词，用于生成小红书封面图
-- 风格：现代科技感，扁平插画或 3D 渲染，色彩鲜明
-- 要包含项目的视觉元素（如相关技术的图标、场景）
-- 不要包含中文文字（AI 绘图中文会乱码）
-
-## 输出格式（严格遵守，不要多输出其他内容）
----TITLE---
-标题内容
----BODY---
-正文内容
----TAGS---
-标签用空格分隔
----COVER_PROMPT---
-英文封面图提示词"""
-
-
-def generate_post(repo_info, readme_summary="", config=None):
-    """根据仓库信息生成小红书文案"""
+    返回:
+      {"title", "body", "tags", "cover_prompt"}
+    """
     if config is None:
         config = load_config()
 
-    llm_config = config["llm"]
+    # 使用传入的 skill，或回退到通用
+    if skill is None:
+        from skills.general import SKILL as skill
 
-    # 构建用户 prompt
-    user_prompt = f"""请为以下 GitHub 项目写一篇小红书笔记：
+    # 从 skill 的 gen_params 组装 system prompt
+    gp = skill.get("gen_params", {})
+    role = gp.get("role", "tech_blogger")
+    style = style_override or gp.get("style", "excited")
+    structure = gp.get("structure", "standard")
+    length = length_override or "medium"
 
-项目名称：{repo_info['name']}
-Stars：{repo_info['stars']}
-语言：{repo_info['language']}
-简介：{repo_info['description']}
-Topics：{', '.join(repo_info.get('topics', []))}
-项目地址：{repo_info['url']}
+    # 合并 skill 自带的 style_hints + 用户 extra_instructions
+    hints = gp.get("style_hints", [])
+    user_extra = extra_instructions or ""
+    all_extra = "\n".join(f"- {h}" for h in hints)
+    if user_extra:
+        all_extra += f"\n- {user_extra}"
 
-README 摘要：
-{readme_summary[:1500]}
+    # 确保 required_tags 被包含
+    required_tags = gp.get("required_tags", "")
+    if required_tags:
+        all_extra += f"\n- tags 字段必须包含 {required_tags}"
 
-请生成小红书风格的文案。"""
+    system_prompt = build_system_prompt(
+        role_key=role,
+        style_key=style,
+        structure_key=structure,
+        length_key=length,
+        extra_instructions=all_extra,
+    )
 
-    payload = {
-        "model": llm_config["model"],
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        "max_tokens": 2000,
-        "temperature": 0.75,
-    }
+    # 用户提示词（包含仓库信息）
+    user_prompt = f"""请为以下 GitHub 项目生成一条小红书推广笔记。
+
+项目信息：
+- 名称：{repo_info['name']}
+- 描述：{repo_info.get('description', '无')}
+- Stars：{repo_info.get('stars', 0)}
+- 语言：{repo_info.get('language', '未知')}
+- 链接：{repo_info.get('url', '')}
+- Topics：{', '.join(repo_info.get('topics', [])[:10])}
+"""
+
+    if readme:
+        user_prompt += f"\nREADME 摘要：\n{readme[:2000]}"
+
+    # 调用 LLM
+    llm_config = config.get("llm", {})
+    api_key = llm_config.get("api_key", "")
+    api_url = llm_config.get("api_url", "").rstrip("/")
+    model = llm_config.get("model", "")
 
     headers = {
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {llm_config.get('api_key', '')}",
+    }
+
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.8,
+        "max_tokens": 4096,
     }
 
     try:
-        resp = requests.post(
-            llm_config["api_url"],
-            json=payload,
-            headers=headers,
-            timeout=60,
-        )
+        url = api_url
+        style_name = STYLES.get(style, {}).get("name", style)
+        length_name = LENGTHS.get(length, {}).get("desc", length)
+        print(f"[generator] 调用 LLM ({skill['name']} | {style_name} | {length_name})...")
+        resp = requests.post(url, headers=headers, json=body, timeout=120)
         resp.raise_for_status()
-        result = resp.json()
-        content = result["choices"][0]["message"]["content"]
-        print(f"[generator] LLM 返回 {len(content)} 字符")
-        print(f"[generator] 原始响应前200字: {content[:200]}")
+        content = resp.json()["choices"][0]["message"]["content"]
+
+        # 尝试解析 JSON
+        post = parse_json_response(content)
+        if post:
+            print(f"[generator] 文案生成成功：{post['title']}")
+            return post
+        else:
+            print("[generator] LLM 返回内容无法解析为 JSON，尝试提取...")
+            return extract_fallback(content)
+
+    except requests.exceptions.HTTPError as e:
+        print(f"[generator] HTTP 错误: {e}")
+        print(f"  响应: {e.response.text[:500]}")
+        return None
     except Exception as e:
-        print(f"[generator] LLM 请求失败: {e}")
+        print(f"[generator] 调用失败: {e}")
         return None
 
-    return parse_response(content)
 
+def parse_json_response(content):
+    """尝试从 LLM 输出中提取 JSON（容错多种格式）"""
+    content = content.strip()
 
-def parse_response(text):
-    """解析 LLM 输出的文案"""
-    post = {"title": "", "body": "", "tags": "", "cover_prompt": ""}
+    # 策略1: 去除所有 ``` 包裹
+    import re
+    fenced = re.findall(r'```(?:json)?\s*\n?(.*?)```', content, re.DOTALL)
+    for block in fenced:
+        block = block.strip()
+        try:
+            data = json.loads(block)
+            if all(k in data for k in ("title", "body", "tags")):
+                return data
+        except json.JSONDecodeError:
+            pass
 
+    # 策略2: 直接解析整个 content
     try:
-        # 按分隔符拆分
-        parts = text.split("---")
-        for i, part in enumerate(parts):
-            part_clean = part.strip()
-            if part_clean == "TITLE":
-                post["title"] = parts[i + 1].strip()
-            elif part_clean == "BODY":
-                post["body"] = parts[i + 1].strip()
-            elif part_clean == "TAGS":
-                post["tags"] = parts[i + 1].strip()
-            elif part_clean == "COVER_PROMPT":
-                post["cover_prompt"] = parts[i + 1].strip()
-    except (IndexError, ValueError):
-        # 解析失败时用全文作为 body
-        print(f"[generator] 解析失败，原始内容: {text[:200]}")
-        post["body"] = text
-        post["title"] = "🔥 今日推荐开源项目"
+        data = json.loads(content)
+        if all(k in data for k in ("title", "body", "tags")):
+            return data
+    except json.JSONDecodeError:
+        pass
 
-    if not post["title"]:
-        print("[generator] 警告: 标题为空")
-    if not post["body"]:
-        print("[generator] 警告: 正文为空")
+    # 策略3: 贪婪匹配最外层 { ... }
+    start = content.find("{")
+    end = content.rfind("}") + 1
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(content[start:end])
+            if all(k in data for k in ("title", "body", "tags")):
+                return data
+        except json.JSONDecodeError:
+            pass
 
-    return post
+    # 策略4: 逐个 { 找起
+    for i, ch in enumerate(content):
+        if ch == "{":
+            for j in range(len(content) - 1, i, -1):
+                if content[j] == "}":
+                    try:
+                        data = json.loads(content[i:j + 1])
+                        if all(k in data for k in ("title", "body", "tags")):
+                            return data
+                    except json.JSONDecodeError:
+                        continue
+                    break
+
+    return None
 
 
-def save_draft(post, date_str=None):
-    """保存文案草稿到本地"""
-    if date_str is None:
-        from datetime import datetime
-        date_str = datetime.now().strftime("%Y-%m-%d")
+def extract_fallback(content):
+    """JSON 解析失败时的降级处理"""
+    return {
+        "title": "发现一个超棒的开源项目！",
+        "body": content[:1000],
+        "tags": "#开源 #程序员 #GitHub",
+        "cover_prompt": "tech project highlight",
+        "slides": [
+            {"type": "cover", "heading": "开源项目", "subheading": "发现一个超棒的项目"},
+            {"type": "features", "heading": "产品功能", "intro": "核心功能一览", "items": [
+                {"icon": "⭐", "title": "高星项目", "desc": "GitHub 热门推荐"},
+                {"icon": "🔧", "title": "实用工具", "desc": "开发者必备"},
+                {"icon": "📖", "title": "开源免费", "desc": "MIT 协议开源"},
+                {"icon": "🚀", "title": "快速上手", "desc": "简单易用"},
+            ], "summary_text": "该项目是一款实用的开源工具，帮助开发者提升效率。", "stats": [
+                {"value": "1000+", "label": "GitHub Stars"},
+                {"value": "3+", "label": "核心功能"},
+                {"value": "MIT", "label": "开源协议"},
+                {"value": "24/7", "label": "随时可用"},
+            ]},
+            {"type": "highlights", "heading": "核心亮点", "intro": "为什么值得用", "items": [
+                {"icon": "✦", "title": "简单易用", "desc": "上手快"},
+                {"icon": "✦", "title": "性能优秀", "desc": "高效稳定"},
+            ]},
+            {"type": "architecture", "heading": "技术架构", "intro": "技术栈概览",
+             "layers": [{"name": "核心层", "desc": "主要功能模块"}],
+             "tech_stack": ["开源"]},
+            {"type": "usage", "heading": "快速上手", "steps": [{"cmd": "clone & run", "desc": "克隆并运行"}],
+             "github": {}},
+        ],
+    }
 
-    drafts_dir = Path(__file__).parent / "drafts"
-    drafts_dir.mkdir(exist_ok=True)
 
-    filepath = drafts_dir / f"{date_str}.md"
+def save_draft(post, output_dir=None):
+    """保存文案草稿到指定目录"""
+    if output_dir is None:
+        output_dir = Path(__file__).parent / "drafts"
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    filepath = output_dir / "draft.md"
 
     content = f"""# {post['title']}
 
@@ -190,24 +236,8 @@ def save_draft(post, date_str=None):
 {post.get('cover_prompt', '无')}
 
 ---
-> Generated at {date_str}
+> Generated at {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
     filepath.write_text(content, encoding="utf-8")
     print(f"[generator] 草稿已保存: {filepath}")
     return filepath
-
-
-if __name__ == "__main__":
-    # 测试用
-    test_repo = {
-        "name": "test/ai-tool",
-        "description": "A cool AI developer tool",
-        "stars": 1234,
-        "language": "Python",
-        "url": "https://github.com/test/ai-tool",
-        "topics": ["ai", "developer-tools"],
-    }
-    post = generate_post(test_repo, "This is a test README summary.")
-    print(f"标题: {post['title']}")
-    print(f"正文:\n{post['body']}")
-    print(f"标签: {post['tags']}")

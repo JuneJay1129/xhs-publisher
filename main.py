@@ -1,155 +1,207 @@
 """
-小红书自动发布工具 - 主入口
-GitHub 热门项目 → LLM 生成文案 → 半自动发布到小红书
-
+小红书自动发布工具
 用法：
-  python main.py              # 完整流程（采集→生成→发布）
-  python main.py --draft      # 仅生成文案草稿，不发布
-  python main.py --pick N     # 指定第 N 个项目（从缓存列表选）
+  python main.py list                  # 查看 GitHub 热门项目
+  python main.py generate              # 生成文案（默认 1 篇）
+  python main.py generate -n 3         # 生成 3 篇文案
+  python main.py generate --style calm # 用沉稳风格生成
+  python main.py generate --dry-run    # 只看标题不调 LLM
+  python main.py publish               # 自动发布到小红书
+  python main.py preview               # 预览生成的 HTML 封面
+
+风格选项 (--style)：excited(默认) | calm | funny | tutorial | comparison
+长度选项 (--length)：short(200-350字) | medium(默认300-600字) | long(500-800字)
+附加指令 (--extra)："多用繁体字" / "跟xx对比" / "不要用网络用语" 等
 """
 
 import sys
 import json
+import argparse
 from pathlib import Path
 from datetime import datetime
 
-# Windows UTF-8 输出
 sys.stdout.reconfigure(encoding="utf-8")
-sys.stderr.reconfigure(encoding="utf-8")
-
-from scraper import get_repos, pick_best_repo
-from generator import generate_post, save_draft
-from cover_gen import generate_covers
-from publisher import publish_post
 
 
-def load_config():
+def get_output_dir():
+    """基于当前时间的输出目录"""
+    return datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+
+
+def load_used(used_path):
+    if used_path.exists():
+        return set(json.loads(used_path.read_text(encoding="utf-8")))
+    return set()
+
+
+def save_used(used_path, used_set):
+    used_path.write_text(json.dumps(list(used_set), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def cmd_list(args):
+    """查看热门项目列表"""
+    from scraper import get_repos, DATA_PATH
+    repos = get_repos()
+    print(f"\nGitHub 热门项目\n")
+    for i, r in enumerate(repos, 1):
+        topics = ", ".join(r.get("topics", [])[:5])
+        print(f"  {i:2d}. {r['name']:<30s} ⭐ {r['stars']:>6,}  {r['language'] or '':<12s} {topics}")
+        print(f"      {r.get('description', '')[:80]}")
+    print(f"\n共 {len(repos)} 个项目（缓存于 {DATA_PATH}）")
+
+
+def cmd_generate(args):
+    """生成文案"""
+    from scraper import get_repos
+    from skills import detect_skill
+    from generator import generate_post, save_draft
+
     config_path = Path(__file__).parent / "config.json"
-    example_path = Path(__file__).parent / "config.example.json"
-
     if not config_path.exists():
-        if example_path.exists():
-            print("⚠️  config.json 不存在，已从 config.example.json 创建模板")
-            print(f"   请编辑 {config_path} 填入你的 API key\n")
-            config_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
-        else:
-            print("❌ config.json 和 config.example.json 都不存在")
-            sys.exit(1)
+        print("[错误] config.json 不存在，请先创建配置文件。")
+        print("  参考 config.example.json")
+        return
 
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
 
-    # 校验必填项
-    api_key = config.get("llm", {}).get("api_key", "")
-    if not api_key or api_key == "your-api-key-here":
-        print("❌ 请在 config.json 中填入你的 LLM API key")
-        print(f"   编辑: {config_path}")
-        sys.exit(1)
+    used_path = Path(__file__).parent / "data" / "used.json"
+    used = load_used(used_path)
 
-    return config
+    # 获取项目列表
+    repos = get_repos()
 
+    # 过滤已使用
+    available = [r for r in repos if r["name"] not in used]
+    if not available:
+        print("[提示] 所有项目都已使用过，重置已用列表。")
+        used.clear()
+        available = repos
 
-def run(skip_publish=False, pick_index=None):
-    """完整流程：采集 → 生成 → 发布"""
-    config = load_config()
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    # 选前 N 个（跳过已处理的）
+    to_process = available[:args.n]
 
-    print(f"{'='*50}")
-    print(f"🚀 小红书自动发布 - {date_str}")
-    print(f"{'='*50}\n")
-
-    # Step 1: 获取热门项目
-    print("📥 Step 1: 获取热门项目...")
-    repos = get_repos(config)
-
-    if not repos:
-        print("❌ 没有找到项目，请先运行采集")
+    if args.dry_run:
+        print(f"\n[dry-run] 将处理 {len(to_process)} 个项目：\n")
+        for r in to_process:
+            skill, score, reason = detect_skill(r)
+            print(f"  - {r['name']:<30s} ⭐ {r['stars']:>6,}  →  [{skill['id']}] {skill['name']} ({reason})")
         return
 
-    # 打印候选列表
-    print(f"\n热门项目列表：")
-    for i, r in enumerate(repos[:10], 1):
-        print(f"  {i}. {r['name']} ⭐{r['stars']} - {r['description'][:50]}")
+    # 创建时间戳输出目录
+    timestamp_dir = Path(__file__).parent / "output" / get_output_dir()
 
-    # 选择项目
-    if pick_index is not None and 0 < pick_index <= len(repos):
-        repo = repos[pick_index - 1]
-        print(f"\n👆 手动选择第 {pick_index} 个项目")
+    print(f"\n开始生成 {len(to_process)} 篇文案...\n")
+
+    for i, r in enumerate(to_process, 1):
+        print(f"━━━ [{i}/{len(to_process)}] {r['name']} ━━━")
+        skill, score, reason = detect_skill(r)
+        print(f"  匹配 skill: [{skill['id']}] {skill['name']} ({reason})")
+
+        # 读取 README（缓存中没有 readme 字段，跳过）
+        readme = ""
+
+        # 生成文案
+        post = generate_post(
+            r, readme, config, skill,
+            style_override=args.style,
+            length_override=args.length,
+            extra_instructions=args.extra,
+        )
+        if post:
+            out_dir = timestamp_dir / r["name"]
+            save_draft(post, out_dir)
+
+            # 生成介绍图
+            slides = post.get("slides", [])
+            if slides:
+                # 注入 GitHub 项目信息到各 slide
+                owner = r["name"].split("/")[0] if "/" in r["name"] else ""
+                for s in slides:
+                    # 封面：注入 avatar
+                    if s.get("type") == "cover" and owner:
+                        s["avatar_url"] = f"https://github.com/{owner}.png"
+                        if not s.get("star_text") and r.get("stars"):
+                            s["star_text"] = f"{r['stars']:,}"
+                        if not s.get("lang_text") and r.get("language"):
+                            s["lang_text"] = r["language"]
+                    # 使用页：注入 GitHub 信息
+                    if s.get("type") == "usage":
+                        gh = s.get("github", {})
+                        if not gh.get("name"):
+                            s["github"] = {
+                                "name": r["name"],
+                                "desc": (r.get("description") or "")[:50],
+                                "stars": f"{r.get('stars', 0):,}",
+                                "forks": f"{r.get('forks', 0):,}" if r.get("forks") else "—",
+                                "url": r.get("url", ""),
+                            }
+
+                from slide_gen import generate_slides
+                img_dir = out_dir / "images"
+                saved = generate_slides(slides, img_dir)
+                print(f"  📸 生成 {len(saved)} 张介绍图")
+
+            used.add(r["name"])
+            print()
+
+    save_used(used_path, used)
+    print(f"✅ 全部完成！文案保存在 output/{get_output_dir()}/")
+
+
+def cmd_publish(args):
+    """发布到小红书"""
+    from publisher import publish_post
+    publish_post()
+
+
+def cmd_preview(args):
+    """预览封面"""
+    from cover_gen import generate_covers_from_draft
+    generate_covers_from_draft()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="小红书自动发布工具",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    # list
+    p_list = sub.add_parser("list", help="查看 GitHub 热门项目")
+    p_list.add_argument("--lang", default="", help="编程语言筛选")
+    p_list.add_argument("--since", default="daily", choices=["daily", "weekly", "monthly"])
+    p_list.set_defaults(func=cmd_list)
+
+    # generate
+    p_gen = sub.add_parser("generate", help="生成文案")
+    p_gen.add_argument("-n", type=int, default=1, help="生成数量（默认 1）")
+    p_gen.add_argument("--style", default=None,
+                       choices=["excited", "calm", "funny", "tutorial", "comparison"],
+                       help="文案风格（默认根据 skill 自动选择）")
+    p_gen.add_argument("--length", default=None,
+                       choices=["short", "medium", "long"],
+                       help="文案长度（默认 medium）")
+    p_gen.add_argument("--extra", default=None,
+                       help="附加指令，如 --extra '多用繁体字' --extra '跟XX对比'")
+    p_gen.add_argument("--dry-run", action="store_true", help="只显示标题，不调用 LLM")
+    p_gen.set_defaults(func=cmd_generate)
+
+    # publish
+    p_pub = sub.add_parser("publish", help="发布到小红书")
+    p_pub.set_defaults(func=cmd_publish)
+
+    # preview
+    p_pre = sub.add_parser("preview", help="预览生成的 HTML 封面")
+    p_pre.set_defaults(func=cmd_preview)
+
+    args = parser.parse_args()
+    if args.command:
+        args.func(args)
     else:
-        # 读取已使用记录，避免重复
-        used_path = Path(__file__).parent / "data" / "used.json"
-        used_names = set()
-        if used_path.exists():
-            used_names = set(json.loads(used_path.read_text(encoding="utf-8")))
-
-        repo = pick_best_repo(repos, used_names)
-
-        # 记录已使用
-        used_names.add(repo["name"])
-        used_path.parent.mkdir(parents=True, exist_ok=True)
-        used_path.write_text(json.dumps(list(used_names), ensure_ascii=False), encoding="utf-8")
-
-    print(f"\n🎯 选中: {repo['name']} ⭐{repo['stars']}")
-    print(f"   {repo['description'][:80]}")
-
-    # 获取 README（从 GitHub API，失败则跳过）
-    print("\n📖 尝试获取 README...")
-    readme = ""
-    try:
-        import requests
-        url = f"https://api.github.com/repos/{repo['name']}/readme"
-        headers = {"Accept": "application/vnd.github.v3.raw", "User-Agent": "xhs-publisher/1.0"}
-        resp = requests.get(url, headers=headers, timeout=15)
-        if resp.ok:
-            readme = resp.text[:2000]
-            print(f"   获取成功（{len(readme)} 字符）")
-    except Exception:
-        print("   获取失败，用 description 替代")
-        readme = repo.get("description", "")
-
-    # Step 2: 生成文案
-    print("\n✍️  Step 2: 生成小红书文案...")
-    post = generate_post(repo, readme, config)
-
-    if not post:
-        print("❌ 文案生成失败")
-        return
-
-    # 打印文案
-    print(f"\n{'─'*40}")
-    print(f"📝 {post['title']}")
-    print(f"{'─'*40}")
-    print(post["body"])
-    print(f"\n{post['tags']}")
-    print(f"{'─'*40}\n")
-
-    # 保存草稿
-    draft_path = save_draft(post, date_str)
-
-    # Step 3: 生成封面图 HTML
-    print("\n🎨 Step 3: 生成封面图...")
-    cover_paths = generate_covers(post, repo, date_str)
-    print(f"   共 {len(cover_paths)} 张，用浏览器打开后截图即可")
-
-    if skip_publish:
-        print("\n✅ 草稿 + 封面图已生成，跳过发布")
-        return post, draft_path
-
-    # Step 4: 发布
-    print("\n📤 Step 4: 打开小红书发布页...")
-    success = publish_post(post)
-    print("✅ 完成！" if success else "⚠️  请手动检查发布状态")
-
-    return post, draft_path
+        parser.print_help()
 
 
 if __name__ == "__main__":
-    args = sys.argv[1:]
-    skip = "--draft" in args
-    pick = None
-    for a in args:
-        if a.startswith("--pick"):
-            idx = args.index(a)
-            if idx + 1 < len(args):
-                pick = int(args[idx + 1])
-    run(skip_publish=skip, pick_index=pick)
+    main()
