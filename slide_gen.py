@@ -323,22 +323,56 @@ def _render_highlights(slide, theme):
           </div>
         </div>"""
 
-    # 使用场景
+    # 使用场景（支持 string 或 dict 格式）
     scenarios_html = ""
     if scenarios:
         scenarios_items = ""
-        for s in scenarios[:2]:
-            quote = s.get("quote", "")
-            author = s.get("author", "")
+        for s in scenarios[:4]:
+            if isinstance(s, str):
+                quote = s
+                author = ""
+                source = ""
+            else:
+                quote = s.get("quote", s.get("text", ""))
+                author = s.get("author", "")
+                source = s.get("source", "")
+            source_html = f'  <div class="source">{source}</div>' if source else ""
+            author_html = f'  <div class="author">— {author}</div>' if author else ""
             scenarios_items += f"""
             <div class="scenario">
               <div class="quote">"{quote}"</div>
-              <div class="author">— {author}</div>
+              {author_html}
+              {source_html}
             </div>"""
+        label = slide.get("scenarios_label", "💬 使用场景")
         scenarios_html = f"""
         <div class="scenarios-section">
-          <div class="section-title">💬 用户怎么说</div>
+          <div class="section-title">{label}</div>
           <div class="scenarios-grid">{scenarios_items}</div>
+        </div>"""
+
+    # 使用前后对比（替代 scenarios，二选一）
+    compare_html = ""
+    compare = slide.get("compare", {})
+    if compare and not scenarios_html:
+        before = compare.get("before", {})
+        after = compare.get("after", {})
+        before_items = ""
+        after_items = ""
+        for it in before.get("items", [])[:3]:
+            before_items += f'<div class="cmp-item bad"><span class="cmp-icon">✕</span><span>{it}</span></div>'
+        for it in after.get("items", [])[:3]:
+            after_items += f'<div class="cmp-item good"><span class="cmp-icon">✓</span><span>{it}</span></div>'
+        compare_html = f"""
+        <div class="compare-section">
+          <div class="compare-col before">
+            <div class="compare-label">{before.get('label', 'Before')}</div>
+            {before_items}
+          </div>
+          <div class="compare-col after">
+            <div class="compare-label">{after.get('label', 'After')}</div>
+            {after_items}
+          </div>
         </div>"""
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">{FONT_LINK}<style>
@@ -370,22 +404,24 @@ h2 {{
   display: flex;
   flex-direction: column;
   padding: 0 60px;
+  gap: 14px;
   overflow: hidden;
 }}
 .metrics-row {{
   display: flex; gap: 20px;
-  padding: 20px 0 16px;
+  padding: 16px 0 0;
+  flex-shrink: 0;
 }}
 .metric {{
   flex: 1;
   background: #fff;
   border-radius: 12px;
-  padding: 16px;
+  padding: 14px;
   text-align: center;
   border: 1px solid {theme['card_border']};
 }}
 .metric-value {{
-  font-size: 52px;
+  font-size: 48px;
   font-weight: 900;
   color: {theme['accent']};
   margin-bottom: 4px;
@@ -399,14 +435,17 @@ h2 {{
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
 }}
 .highlight-card {{
   display: flex;
   gap: 16px;
-  padding: 14px 20px;
+  padding: 16px 20px;
   background: #fff;
   border-radius: 14px;
   border: 1px solid {theme['card_border']};
+  flex: 1;
+  align-items: center;
 }}
 .card-icon {{
   font-size: 28px;
@@ -433,38 +472,104 @@ h2 {{
   line-height: 1.5;
 }}
 .scenarios-section {{
-  padding: 16px 0 0;
+  padding: 14px 0 0;
   border-top: 1.5px solid {theme['card_border']};
+  flex-shrink: 0;
 }}
 .section-title {{
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   color: {theme['text']};
 }}
 .scenarios-grid {{
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 4px;
 }}
 .scenario {{
-  flex: 1;
+  padding: 10px 14px;
   background: #fff;
   border-radius: 12px;
-  padding: 14px 16px;
-  border-left: 3px solid {theme['accent']};
+  border: 1px solid {theme['card_border']};
+}}
+.scenario:last-child {{
+  border-bottom: none;
 }}
 .quote {{
-  font-size: 20px;
+  font-size: 22px;
   font-style: italic;
   color: {theme['text']};
   line-height: 1.5;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }}
 .author {{
-  font-size: 18px;
+  font-size: 17px;
   color: {theme['text_sub']};
   text-align: right;
 }}
+.source {{
+  font-size: 14px;
+  color: {theme['accent']};
+  text-align: right;
+  margin-top: 1px;
+}}
+/* ── 使用前后对比 ── */
+.compare-section {{
+  display: flex;
+  gap: 0;
+  padding: 14px 0 0;
+}}
+.compare-col {{
+  flex: 1;
+  padding: 16px 20px;
+}}
+.compare-col.before {{
+  background: #fff0f0;
+  border-radius: 14px 0 0 14px;
+  border: 2px solid #f5c6c6;
+  border-right: none;
+}}
+.compare-col.after {{
+  background: #f0fff4;
+  border-radius: 0 14px 14px 0;
+  border: 2px solid {theme['accent']};
+  border-left: 2px dashed #ccc;
+}}
+.compare-label {{
+  font-size: 22px;
+  font-weight: 900;
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}}
+.compare-col.before .compare-label {{ color: #c0392b; }}
+.compare-col.after .compare-label {{ color: {theme['accent']}; }}
+.cmp-item {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.5;
+}}
+.cmp-item .cmp-icon {{
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 900;
+  color: #fff;
+}}
+.cmp-item.bad .cmp-icon {{ background: #e74c3c; }}
+.cmp-item.good .cmp-icon {{ background: {theme['accent']}; }}
+.cmp-item.bad {{ color: #666; }}
+.cmp-item.good {{ color: {theme['text']}; font-weight: 700; }}
 .footer {{
   padding: 20px 60px;
   border-top: 1.5px solid {theme['card_border']};
@@ -480,8 +585,9 @@ h2 {{
 <div class="lead">{intro}</div>
 <div class="content">
   {metrics_html}
-  <div class="cards-section">{cards_html}</div>
-  {scenarios_html}
+   <div class="cards-section">{cards_html}</div>
+   {scenarios_html}
+   {compare_html}
 </div>
 <div class="footer">
   <span>WHY CHOOSE</span>
@@ -493,38 +599,19 @@ h2 {{
 # ── Slide 4: 技术架构 ─────────────────────────────────────
 
 def _render_architecture(slide, theme):
-    """技术架构：两列对比 + 从上到下流程 + 冲击力"""
+    """技术架构：2×2 网格模块 + 全宽详细说明区 + 技术栈标签"""
     heading = slide.get("heading", "技术架构")
     intro = slide.get("intro", "")
     layers = slide.get("layers", [])
     tech_stack = slide.get("tech_stack", [])
-    flow_steps = slide.get("flow_steps", [])
-    compare = slide.get("compare", {})
+    description = slide.get("description", "")
 
-    # 流程图
-    flow_html = ""
-    if flow_steps:
-        flow_items = ""
-        for i, step in enumerate(flow_steps[:4]):
-            flow_items += f'<div class="flow-step">{step}</div>'
-            if i < len(flow_steps) - 1:
-                flow_items += '<div class="flow-arrow"><span class="arrow-line"></span><span class="arrow-head">›</span></div>'
-        flow_html = f'<div class="flow-section">{flow_items}</div>'
-
-    # 两列对比数据
-    before = compare.get("before", {})
-    after = compare.get("after", {})
-    before_items_html = ""
-    after_items_html = ""
-    for it in before.get("items", []):
-        before_items_html += f'<div class="cmp-item bad"><span class="cmp-icon">✕</span><span>{it}</span></div>'
-    for it in after.get("items", []):
-        after_items_html += f'<div class="cmp-item good"><span class="cmp-icon">✓</span><span>{it}</span></div>'
-
-    # 架构卡片（精简描述，突出名称）
+    # 2×2 架构卡片
     layers_html = ""
-    for ly in layers[:4]:
+    default_icons = ["🏗", "🔀", "🩺", "🤖", "⚙️", "📦"]
+    for idx, ly in enumerate(layers[:4]):
         name = ly.get("name", "")
+        icon = ly.get("icon", default_icons[idx % len(default_icons)])
         desc = ly.get("desc", "")
         features = ly.get("features", [])
         feat_html = ""
@@ -533,9 +620,20 @@ def _render_architecture(slide, theme):
             feat_html = f'<div class="feat-row">{feat_items}</div>'
         layers_html += f"""
         <div class="layer">
-          <div class="layer-name">{name}</div>
+          <div class="layer-header">
+            <span class="layer-icon">{icon}</span>
+            <span class="layer-name">{name}</span>
+          </div>
           <div class="layer-desc">{desc}</div>
           {feat_html}
+        </div>"""
+
+    # 全宽详细说明区
+    desc_block = ""
+    if description:
+        desc_block = f"""
+        <div class="arch-description">
+          <div class="desc-text">{description}</div>
         </div>"""
 
     # 技术栈标签
@@ -571,120 +669,44 @@ h2 {{
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 0 60px;
+  justify-content: center;
+  padding: 20px 60px;
+  gap: 18px;
   overflow: hidden;
 }}
-/* ── 流程图 ── */
-.flow-section {{
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 18px 0 14px;
-}}
-.flow-step {{
-  background: #fff;
-  border-radius: 14px;
-  padding: 14px 28px;
-  font-weight: 800;
-  font-size: 24px;
-  border: 1.5px solid {theme['card_border']};
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-}}
-.flow-arrow {{
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  color: {theme['accent']};
-}}
-.arrow-line {{
-  display: inline-block;
-  width: 28px;
-  height: 2px;
-  background: {theme['accent']};
-}}
-.arrow-head {{
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1;
-}}
-/* ── 两列对比 ── */
-.compare-section {{
-  display: flex;
-  gap: 0;
-  padding: 0 0 14px;
-}}
-.compare-col {{
-  flex: 1;
-  padding: 20px 24px;
-}}
-.compare-col.before {{
-  background: #fff0f0;
-  border-radius: 16px 0 0 16px;
-  border: 2px solid #f5c6c6;
-  border-right: none;
-}}
-.compare-col.after {{
-  background: #f0fff4;
-  border-radius: 0 16px 16px 0;
-  border: 2px solid {theme['accent']};
-  border-left: 2px dashed #ccc;
-}}
-.compare-label {{
-  font-size: 24px;
-  font-weight: 900;
-  margin-bottom: 12px;
-  letter-spacing: 1px;
-}}
-.compare-col.before .compare-label {{ color: #c0392b; }}
-.compare-col.after .compare-label {{ color: {theme['accent']}; }}
-.cmp-item {{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1.5;
-}}
-.cmp-item .cmp-icon {{
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: 900;
-  color: #fff;
-}}
-.cmp-item.bad .cmp-icon {{ background: #e74c3c; }}
-.cmp-item.good .cmp-icon {{ background: {theme['accent']}; }}
-.cmp-item.bad {{ color: #666; }}
-.cmp-item.good {{ color: {theme['text']}; font-weight: 700; }}
-/* ── 架构卡片 2×2 ── */
+/* ── 2×2 架构网格 ── */
 .arch-grid {{
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 14px;
 }}
 .layer {{
   background: #fff;
-  border-radius: 14px;
-  padding: 18px 22px;
-  border: 1px solid {theme['card_border']};
+  border-radius: 16px;
+  padding: 20px 24px;
+  border: 1.5px solid {theme['card_border']};
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}}
+.layer-header {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}}
+.layer-icon {{
+  font-size: 28px;
+  line-height: 1;
 }}
 .layer-name {{
-  font-size: 24px;
-  font-weight: 800;
-  margin-bottom: 6px;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
 }}
 .layer-desc {{
-  font-size: 20px;
+  font-size: 19px;
   color: {theme['text_sub']};
   line-height: 1.5;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }}
 .feat-row {{
   display: flex;
@@ -694,16 +716,27 @@ h2 {{
 .feat-tag {{
   background: {theme['bg']};
   border-radius: 8px;
-  padding: 5px 12px;
+  padding: 5px 14px;
   font-size: 17px;
   color: {theme['text']};
-  font-weight: 500;
+  font-weight: 600;
 }}
-/* ── 技术栈 ── */
+/* ── 全宽详细说明区 ── */
+.arch-description {{
+  background: {theme['bg']};
+  border: 1.5px solid {theme['card_border']};
+  border-radius: 16px;
+  padding: 20px 28px;
+}}
+.desc-text {{
+  font-size: 22px;
+  color: {theme['text']};
+  line-height: 1.7;
+  font-weight: 400;
+}}
+/* ── 技术栈标签 ── */
 .tags-row {{
   display: flex; flex-wrap: wrap; gap: 10px;
-  padding: 14px 0 0;
-  border-top: 1.5px solid {theme['card_border']};
 }}
 .tag {{
   background: #fff; border: 1px solid {theme['card_border']};
@@ -711,7 +744,7 @@ h2 {{
   font-size: 20px; color: {theme['text']}; font-weight: 600;
 }}
 .footer {{
-  padding: 20px 60px;
+  padding: 18px 60px;
   border-top: 1.5px solid {theme['card_border']};
   display: flex; justify-content: space-between;
   font-size: 13px; color: {theme['text_sub']}; letter-spacing: 2px;
@@ -724,18 +757,8 @@ h2 {{
 <h2>{heading}</h2>
 <div class="lead">{intro}</div>
 <div class="content">
-  {flow_html}
-  <div class="compare-section">
-    <div class="compare-col before">
-      <div class="compare-label">{before.get('label', 'Before')}</div>
-      {before_items_html}
-    </div>
-    <div class="compare-col after">
-      <div class="compare-label">{after.get('label', 'After')}</div>
-      {after_items_html}
-    </div>
-  </div>
   <div class="arch-grid">{layers_html}</div>
+  {desc_block}
   <div class="tags-row">{tags}</div>
 </div>
 <div class="footer">
@@ -823,8 +846,8 @@ h2 {{
   padding: 0 60px 20px;
 }}
 .content {{
-  flex: 1; padding: 0 60px;
-  display: flex; flex-direction: column; gap: 30px;
+  flex: 1; padding: 14px 60px;
+  display: flex; flex-direction: column; gap: 16px;
   overflow: hidden;
 }}
 /* ── 步骤合并卡片 ── */
@@ -833,6 +856,7 @@ h2 {{
   border-radius: 16px;
   border: 1.5px solid {theme['card_border']};
   padding: 8px 0;
+  flex-shrink: 0;
 }}
 .step-row {{
   display: flex;
@@ -868,6 +892,9 @@ h2 {{
   border-radius: 14px;
   overflow: hidden;
   background: #1e1e1e;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }}
 .terminal-bar {{
   display: flex; align-items: center; gap: 8px;
@@ -878,7 +905,12 @@ h2 {{
 .t-dot.yellow {{ background: #febc2e; }}
 .t-dot.green {{ background: #28c840; }}
 .t-title {{ color: #888; font-size: 14px; margin-left: 8px; font-family: 'SF Mono', monospace; }}
-.terminal-body {{ padding: 20px 24px; }}
+.terminal-body {{
+  padding: 20px 24px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}}
 .terminal-body pre {{
   margin: 0;
   font-family: 'SF Mono', 'Menlo', 'Courier New', monospace;
@@ -890,6 +922,10 @@ h2 {{
   border-radius: 16px;
   border: 1.5px solid {theme['card_border']};
   padding: 20px 28px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }}
 .tip-line {{
   font-size: 26px;
@@ -975,6 +1011,18 @@ def generate_slides(slides_data, output_dir, **_ignored):
     theme = THEME
     print(f"[slide_gen] 主题: {theme['name']}")
 
+    # ── 数据复查 ──
+    review_issues = review_slides(slides_data, theme)
+    if review_issues:
+        print("[slide_gen] ⚠️  复查发现以下问题：")
+        for ri in review_issues:
+            print(f"  Slide {ri['index']+1} ({ri['type']}):")
+            for issue in ri["issues"]:
+                print(f"    - {issue}")
+        print("[slide_gen] 将继续生成，但请检查上述问题。")
+    else:
+        print("[slide_gen] ✅ 数据复查通过")
+
     # 预处理：将 GitHub 头像 URL 转为 base64 data URI
     for slide in slides_data:
         if slide.get("type") == "cover" and slide.get("avatar_url"):
@@ -1001,3 +1049,107 @@ def generate_slides(slides_data, output_dir, **_ignored):
             saved.append(html_path)
 
     return saved
+
+
+# ── 复查机制：程序化检测 HTML 内容完整性和留白 ──────────────
+
+def review_slides(slides_data: list, theme: dict) -> list[dict]:
+    """检查每页幻灯片的数据完整性，返回不合格项列表。
+
+    检查规则：
+    1. 各区块文本是否为空或过短
+    2. 列表类字段是否有足够条目
+    3. 占位/默认文本检测
+
+    Returns:
+        list of {index, type, issues: [str]}
+    """
+    results = []
+    MIN_TEXT_LEN = 8       # 最小有效文本长度
+    MIN_ITEMS = 2           # 列表最少条目数
+    MIN_FEATURE_DESC = 15   # 功能描述最少字符
+
+    for i, slide in enumerate(slides_data):
+        issues = []
+        stype = slide.get("type", "unknown")
+
+        # ── 通用检查 ──
+        heading = slide.get("heading", "")
+        if not heading or len(heading.strip()) < 2:
+            issues.append("heading 为空或过短")
+
+        intro = slide.get("intro", slide.get("subheading", ""))
+        if not intro or len(intro.strip()) < MIN_TEXT_LEN:
+            issues.append("intro/subheading 为空或过短")
+
+        # ── 按类型检查 ──
+        if stype == "cover":
+            sub = slide.get("subheading", "")
+            if not sub or len(sub.strip()) < MIN_TEXT_LEN:
+                issues.append("封面 subheading 为空")
+
+        elif stype == "features":
+            items = slide.get("items", [])
+            if len(items) < MIN_ITEMS:
+                issues.append(f"features items 不足 ({len(items)}/{MIN_ITEMS})")
+            for j, item in enumerate(items):
+                desc = item.get("desc", "")
+                if not desc or len(desc.strip()) < MIN_FEATURE_DESC:
+                    issues.append(f"items[{j}] desc 过短: '{desc[:20]}'")
+            stats = slide.get("stats", [])
+            if len(stats) < 2:
+                issues.append("stats 数据不足")
+
+        elif stype == "highlights":
+            items = slide.get("items", [])
+            if len(items) < MIN_ITEMS:
+                issues.append(f"highlights items 不足 ({len(items)}/{MIN_ITEMS})")
+            # 检查 scenarios 或 compare 至少有一个有内容
+            scenarios = slide.get("scenarios", [])
+            compare = slide.get("compare", {})
+            if not scenarios and not compare:
+                issues.append("scenarios 和 compare 都为空，底部区域会留白")
+            elif scenarios:
+                for j, s in enumerate(scenarios):
+                    if isinstance(s, str):
+                        q = s
+                    else:
+                        q = s.get("quote", s.get("text", ""))
+                    if not q or len(q.strip()) < MIN_TEXT_LEN:
+                        issues.append(f"scenarios[{j}] 内容为空")
+            elif compare:
+                b_items = compare.get("before", {}).get("items", [])
+                a_items = compare.get("after", {}).get("items", [])
+                if len(b_items) < 2 or len(a_items) < 2:
+                    issues.append("compare 对比项不足 (需各至少 2 项)")
+
+        elif stype == "architecture":
+            layers = slide.get("layers", [])
+            if len(layers) < 2:
+                issues.append(f"layers 不足 ({len(layers)}/2)")
+            for j, ly in enumerate(layers):
+                name = ly.get("name", ly.get("label", ""))
+                desc = ly.get("desc", "")
+                features = ly.get("features", [])
+                if not name:
+                    issues.append(f"layers[{j}] name 为空")
+                if not desc or len(desc.strip()) < MIN_TEXT_LEN:
+                    issues.append(f"layers[{j}] desc 过短")
+                if len(features) < 2:
+                    issues.append(f"layers[{j}] features 不足 ({len(features)}/2)，留白风险")
+            description = slide.get("description", "")
+            if not description or len(description.strip()) < 20:
+                issues.append("description 详细说明区为空或过短")
+
+        elif stype == "usage":
+            steps = slide.get("steps", [])
+            if len(steps) < 3:
+                issues.append(f"steps 不足 ({len(steps)}/3)")
+            tips = slide.get("tips", [])
+            if len(tips) < 2:
+                issues.append(f"tips 不足 ({len(tips)}/2)")
+
+        if issues:
+            results.append({"index": i, "type": stype, "issues": issues})
+
+    return results

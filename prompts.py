@@ -128,6 +128,15 @@ STRUCTURES = {
 不要输出多余内容，只输出 JSON。""",
 }
 
+# ── 全局限制 ────────────────────────────────────────────────
+
+GLOBAL_RULES = """
+## 全局限制（必须遵守）
+- 【严禁】在文案正文（body）中包含任何 URL 链接（包括 github.com、npm、官网等），小红书会判定违规限流甚至封号
+- 引导用户搜索项目名即可，不要放链接
+- slides 中的 github.url 字段可以保留（用于内部展示），但 body 正文中不得出现
+"""
+
 # ── 长度预设（可通过 --length 切换）─────────────────────────
 
 LENGTHS = {
@@ -168,5 +177,8 @@ def build_system_prompt(role_key, style_key, structure_key, length_key, extra_in
 
     if extra_instructions:
         parts.append(f"## 额外要求\n{extra_instructions}")
+
+    # 全局规则（禁止链接等）
+    parts.append(GLOBAL_RULES)
 
     return "\n\n".join(parts)

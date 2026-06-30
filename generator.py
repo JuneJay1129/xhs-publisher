@@ -117,6 +117,14 @@ def generate_post(repo_info, readme="", config=None, skill=None,
         # 尝试解析 JSON
         post = parse_json_response(content)
         if post:
+            # 安全过滤：移除正文中的 URL 链接（小红书违规风险）
+            import re
+            body = post.get("body", "")
+            body = re.sub(r'https?://\S+', '', body)
+            body = re.sub(r'www\.\S+', '', body)
+            body = re.sub(r'\s+', ' ', body).strip()
+            post["body"] = body
+
             print(f"[generator] 文案生成成功：{post['title']}")
             return post
         else:
